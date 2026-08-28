@@ -1,0 +1,10 @@
+Enterprise RAG DeepEval Results
+======================================================================
+Total questions: 3
+Batch size: 3
+Total batches: 1
+Retrieval type: Similarity
+Retrieved chunks: 10
+Metric threshold: 0.5
+======================================================================
+
