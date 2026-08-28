@@ -234,13 +234,7 @@ def remove_duplicate_documents(documents: list) -> list:
 # ======================================================================
 def create_metrics(judge_model: OllamaModel) -> list:
     return [
-        FaithfulnessMetric(
-            threshold=METRIC_THRESHOLD,
-            model=judge_model,
-            include_reason=False,
-            async_mode=False,
-        ),
-        ContextualPrecisionMetric(
+        ContextualRecallMetric(
             threshold=METRIC_THRESHOLD,
             model=judge_model,
             include_reason=False,
@@ -613,7 +607,6 @@ def save_final_summary(
 # ======================================================================
 # MAIN EVALUATION
 # ======================================================================
-
 def main() -> None:
     """
     Run the complete RAG evaluation.
@@ -622,9 +615,6 @@ def main() -> None:
     validate_files()
 
     dataset = load_dataset()
-
-    # TEMPORARY: evaluate only the first 3 questions
-    dataset = dataset.head(3)
 
     total_questions = len(dataset)
 
@@ -636,7 +626,6 @@ def main() -> None:
         total_questions=total_questions,
         total_batches=total_batches,
     )
-
     # ------------------------------------------------------------------
     # Embedding model
     # ------------------------------------------------------------------

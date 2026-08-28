@@ -2,6 +2,7 @@ from langchain_chroma import Chroma
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from sentence_transformers import CrossEncoder
 
+
 from agents.verifier import verify_answer
 from agents.citation_agent import find_citations
 from agents.router_agent import route_request
@@ -9,6 +10,13 @@ from agents.summarizer_agent import (
     summarize_documents,
     filter_summary_documents,
 )
+
+from agents.security_agent import (
+    security_agent,
+    security_rejection_node,
+    route_after_security,
+)
+
 from graph.workflow import build_rag_workflow
 
 # ============================================================
@@ -373,6 +381,18 @@ app = build_rag_workflow(
 
     verify_answer=(
         verify_answer
+    ),
+    # Security Agent
+    security_agent=(
+        security_agent
+    ),
+
+    security_rejection_node=(
+        security_rejection_node
+    ),
+
+    route_after_security=(
+        route_after_security
     ),
 
     # Citation Agent

@@ -17,6 +17,11 @@ MAX_VERIFICATION_RETRIES = 2
 class RAGState(TypedDict, total=False):
 
     question: str
+        # Security Agent
+    security_status: str
+    security_reason: str
+    security_allowed: bool
+    security_risk_score: int
 
     # Router Agent
     route: str
@@ -58,6 +63,9 @@ def build_rag_workflow(
     build_context,
     llm,
     prompt_template,
+    security_agent,
+    security_rejection_node,
+    route_after_security,
     verify_answer,
     find_citations,
     route_request,
@@ -859,6 +867,19 @@ Revised answer:
     # ADD NODES
     # ========================================================
 
+    # Security Agent
+    workflow.add_node(
+        "security",
+        security_agent
+    )
+
+    workflow.add_node(
+        "security_rejection",
+        security_rejection_node
+    )
+
+
+    # Router Agent
     workflow.add_node(
         "router",
         router_node
@@ -910,15 +931,38 @@ Revised answer:
     )
 
 
-    # ========================================================
-    # START → ROUTER
+        # ========================================================
+    # START → SECURITY
     # ========================================================
 
     workflow.add_edge(
         START,
-        "router"
+        "security"
     )
 
+
+    # ========================================================
+    # SECURITY → ROUTER OR REJECTION
+    # ========================================================
+
+    workflow.add_conditional_edges(
+        "security",
+        route_after_security,
+        {
+            "allowed": "router",
+            "blocked": "security_rejection",
+        },
+    )
+
+
+    # ========================================================
+    # SECURITY REJECTION → END
+    # ========================================================
+
+    workflow.add_edge(
+        "security_rejection",
+        END
+    )
 
     # ========================================================
     # ROUTER → RETRIEVAL
