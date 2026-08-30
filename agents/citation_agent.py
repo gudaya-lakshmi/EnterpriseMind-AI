@@ -299,6 +299,141 @@ def remove_duplicate_citations(
         )
 
     return unique
+# ============================================================
+# DETERMINISTIC CITATION FALLBACK
+# ============================================================
+
+def _extract_answer_numbers(
+    text: str
+) -> set[str]:
+
+    numbers = set()
+
+    # Percentages
+    percentages = re.findall(
+        r"\b\d+(?:\.\d+)?\s*%",
+        text
+    )
+
+    for value in percentages:
+        numbers.add(
+            value.replace(" ", "")
+        )
+
+    # Financial values such as 281,724
+    financial_values = re.findall(
+        r"\d{1,3}(?:,\d{3})+(?:\.\d+)?",
+        text
+    )
+
+    for value in financial_values:
+        numbers.add(
+            value.replace(",", "")
+        )
+
+    return numbers
+
+
+def _extract_chunk_numbers(
+    text: str
+) -> set[str]:
+
+    numbers = set()
+
+    # Percentages
+    percentages = re.findall(
+        r"\b\d+(?:\.\d+)?\s*%",
+        text
+    )
+
+    for value in percentages:
+        numbers.add(
+            value.replace(" ", "")
+        )
+
+    # Financial values such as 281,724
+    financial_values = re.findall(
+        r"\d{1,3}(?:,\d{3})+(?:\.\d+)?",
+        text
+    )
+
+    for value in financial_values:
+        numbers.add(
+            value.replace(",", "")
+        )
+
+    return numbers
+
+
+def deterministic_citation_fallback(
+    answer: str,
+    documents
+) -> list[dict]:
+
+    answer_numbers = _extract_answer_numbers(
+        answer
+    )
+
+    if not answer_numbers:
+        return []
+
+    candidates = []
+
+    for index, document in enumerate(
+        documents,
+        start=1
+    ):
+
+        chunk_numbers = _extract_chunk_numbers(
+            document.page_content
+        )
+
+        matching_numbers = (
+            answer_numbers
+            & chunk_numbers
+        )
+
+        if not matching_numbers:
+            continue
+
+        source = document.metadata.get(
+            "source",
+            "Unknown source"
+        )
+
+        page = document.metadata.get(
+            "page_number",
+            document.metadata.get(
+                "page",
+                "Unknown page"
+            )
+        )
+
+        candidates.append(
+            {
+                "chunk_id": index,
+                "source": source,
+                "page": page,
+                "reason": (
+                    "Deterministic numeric evidence match."
+                ),
+                "content": document.page_content.strip(),
+                "_match_count": len(matching_numbers),
+            }
+        )
+
+    candidates.sort(
+        key=lambda item: item["_match_count"],
+        reverse=True
+    )
+
+    for candidate in candidates:
+        candidate.pop(
+            "_match_count",
+            None
+        )
+
+    return candidates
 
 
 # ============================================================
@@ -468,6 +603,45 @@ def find_citations(
 
 
     # --------------------------------------------------------
+    # DETERMINISTIC CITATION FALLBACK
+    # --------------------------------------------------------
+
+    if not final_citations:
+
+        print(
+            "[Citation Agent] LLM found no citation. "
+            "Running deterministic fallback..."
+        )
+
+        final_citations = (
+            deterministic_citation_fallback(
+                answer,
+                documents
+            )
+        )
+
+        final_citations = (
+            remove_duplicate_citations(
+                final_citations
+            )
+        )
+
+        if final_citations:
+
+            print(
+                f"[Citation Agent] Fallback found "
+                f"{len(final_citations)} supporting citation(s)."
+            )
+
+        else:
+
+            print(
+                "[Citation Agent] Fallback found "
+                "no supporting citation."
+            )
+
+
+        # --------------------------------------------------------
     # LIMIT NUMBER OF CITATIONS
     # --------------------------------------------------------
 

@@ -182,47 +182,139 @@ def _extract_json(text: str) -> dict[str, Any]:
 # NUMBER EXTRACTION
 # ============================================================
 
+# ============================================================
+# NUMBER EXTRACTION
+# ============================================================
+
+def _normalize_number(
+    value: str
+) -> str:
+
+    """
+    Normalize numeric formatting so values such as:
+
+    $281,724 million
+    $ 281,724
+    281,724
+
+    all share the same numeric core:
+
+    281724
+    """
+
+    value = value.strip().lower()
+
+    value = value.replace(
+        "$",
+        ""
+    )
+
+    value = value.replace(
+        ",",
+        ""
+    )
+
+    value = value.replace(
+        "million",
+        ""
+    )
+
+    value = value.replace(
+        "billion",
+        ""
+    )
+
+    value = value.replace(
+        "%",
+        ""
+    )
+
+    return value.strip()
+
+
 def extract_numeric_values(
     text: str
 ) -> set[str]:
 
     values = set()
 
-    # Percentages
+    # --------------------------------------------------------
+    # PERCENTAGES
+    # --------------------------------------------------------
+
     percentages = re.findall(
-        r"\b\d+(?:\.\d+)?%",
+        r"\b\d+(?:\.\d+)?\s*%",
         text,
         flags=re.IGNORECASE
     )
 
     for value in percentages:
-        values.add(
-            value.lower().strip()
+
+        normalized = _normalize_number(
+            value
         )
 
-    # Dollar values with units
-    money_with_units = re.findall(
-        r"\$\s?\d+(?:,\d{3})*(?:\.\d+)?"
-        r"\s*(?:billion|million)",
+        values.add(
+            f"percent:{normalized}"
+        )
+
+    # --------------------------------------------------------
+    # DOLLAR VALUES
+    #
+    # Examples:
+    # $281,724
+    # $ 281,724
+    # $281,724 million
+    # $168.9 billion
+    # --------------------------------------------------------
+
+    money_values = re.findall(
+        r"\$\s*"
+        r"(\d+(?:,\d{3})*(?:\.\d+)?)"
+        r"(?:\s*(?:million|billion))?",
         text,
         flags=re.IGNORECASE
     )
 
-    for value in money_with_units:
-        values.add(
-            value.lower().strip()
+    for value in money_values:
+
+        normalized = _normalize_number(
+            value
         )
 
-    # Plain dollar values
-    plain_money = re.findall(
-        r"\$\s?\d+(?:,\d{3})*(?:\.\d+)?",
+        values.add(
+            f"number:{normalized}"
+        )
+
+    # --------------------------------------------------------
+    # COMMA-FORMATTED TABLE VALUES
+    #
+    # Important for PDF tables where:
+    #
+    # (In millions)
+    # Revenue 281,724 245,122 211,915
+    #
+    # The currency symbol/unit may not be repeated
+    # beside every number after PDF extraction.
+    # --------------------------------------------------------
+
+    table_numbers = re.findall(
+        r"(?<![\d.])"
+        r"\d{1,3}(?:,\d{3})+"
+        r"(?:\.\d+)?"
+        r"(?![\d.])",
         text,
         flags=re.IGNORECASE
     )
 
-    for value in plain_money:
+    for value in table_numbers:
+
+        normalized = _normalize_number(
+            value
+        )
+
         values.add(
-            value.lower().strip()
+            f"number:{normalized}"
         )
 
     return values
@@ -253,8 +345,30 @@ def check_numeric_support(
 
         if value not in context_values:
 
+            # Convert internal representation
+            # into readable verifier feedback.
+
+            if value.startswith(
+                "percent:"
+            ):
+
+                display_value = (
+                    value.replace(
+                        "percent:",
+                        ""
+                    )
+                    + "%"
+                )
+
+            else:
+
+                display_value = value.replace(
+                    "number:",
+                    ""
+                )
+
             issues.append(
-                f"Numeric value '{value}' "
+                f"Numeric value '{display_value}' "
                 "is not present in the retrieved evidence."
             )
 
