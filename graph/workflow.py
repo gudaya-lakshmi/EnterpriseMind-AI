@@ -17,7 +17,11 @@ MAX_VERIFICATION_RETRIES = 2
 class RAGState(TypedDict, total=False):
 
     question: str
-        # Security Agent
+
+    # RBAC
+    user_role: str
+
+    # Security Agent
     security_status: str
     security_reason: str
     security_allowed: bool
@@ -134,7 +138,6 @@ def build_rag_workflow(
     # ========================================================
     # RETRIEVAL NODE
     # ========================================================
-
     def retrieve_node(state: RAGState) -> dict:
 
         print(
@@ -147,8 +150,15 @@ def build_rag_workflow(
             question
         )
 
+        # RBAC - get user's role from LangGraph state
+        user_role = state.get(
+            "user_role",
+            "viewer"
+        )
+
         candidate_documents = retriever.invoke(
-            retrieval_query
+            retrieval_query,
+            user_role
         )
 
         print(
@@ -160,7 +170,6 @@ def build_rag_workflow(
             "retrieval_query": retrieval_query,
             "candidate_documents": candidate_documents,
         }
-
 
     # ========================================================
     # RERANK NODE

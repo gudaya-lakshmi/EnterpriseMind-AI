@@ -60,6 +60,9 @@ for page_number, document in enumerate(documents, start=1):
     document.metadata["page_number"] = page_number
     document.metadata["document_type"] = "annual_report"
 
+    # RBAC metadata
+    document.metadata["category"] = "financial"
+
 print("Metadata added successfully.")
 
 

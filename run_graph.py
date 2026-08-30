@@ -2,7 +2,7 @@ from langchain_chroma import Chroma
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from sentence_transformers import CrossEncoder
 
-
+from security.rbac import get_allowed_categories
 from agents.verifier import verify_answer
 from agents.citation_agent import find_citations
 from agents.router_agent import route_request
@@ -281,20 +281,56 @@ llm = ChatOllama(
 class RetrievalAdapter:
 
     """
-    Provides the .invoke() interface expected by workflow.py
-    while preserving the same ChromaDB similarity-search
-    behavior as the original generator.
+    RBAC-aware retrieval adapter.
+    Filters documents by the user's allowed categories
+    before they are passed to the RAG pipeline.
     """
 
     def invoke(
         self,
-        retrieval_query
+        retrieval_query,
+        user_role="viewer"
     ):
 
-        documents = vectorstore.similarity_search(
-            retrieval_query,
-            k=INITIAL_K
+        allowed_categories = get_allowed_categories(
+            user_role
         )
+
+        print(
+            f"[RBAC] User role: {user_role}"
+        )
+
+        print(
+            f"[RBAC] Allowed categories: "
+            f"{allowed_categories}"
+        )
+
+        # Admin can access all document categories
+        if "all" in allowed_categories:
+
+            documents = vectorstore.similarity_search(
+                retrieval_query,
+                k=INITIAL_K
+            )
+
+        # Other roles only retrieve authorized documents
+        else:
+
+            if not allowed_categories:
+                print(
+                    "[RBAC] No document access permitted."
+                )
+                return []
+
+            documents = vectorstore.similarity_search(
+                retrieval_query,
+                k=INITIAL_K,
+                filter={
+                    "category": {
+                        "$in": allowed_categories
+                    }
+                }
+            )
 
         documents = remove_duplicate_documents(
             documents
@@ -422,7 +458,24 @@ print(
 # ============================================================
 # QUESTION-ANSWERING LOOP
 # ============================================================
+VALID_ROLES = {
+    "admin",
+    "finance",
+    "hr",
+    "employee",
+    "viewer",
+}
 
+user_role = input(
+    "Enter role "
+    "(admin/finance/hr/employee/viewer): "
+).strip().lower()
+
+if user_role not in VALID_ROLES:
+    print(
+        "Invalid role. Defaulting to viewer."
+    )
+    user_role = "viewer"
 while True:
 
     question = input(
@@ -456,11 +509,12 @@ while True:
         # ----------------------------------------------------
 
         result = app.invoke(
-            {
-                "question": question,
-                "retry_count": 0,
-            }
-        )
+    {
+        "question": question,
+        "user_role": user_role,
+        "retry_count": 0,
+    }
+)
 
 
         # ----------------------------------------------------
