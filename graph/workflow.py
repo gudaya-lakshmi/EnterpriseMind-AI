@@ -1,3 +1,4 @@
+import time
 from typing import TypedDict, Any
 
 from langgraph.graph import StateGraph, START, END
@@ -54,6 +55,16 @@ class RAGState(TypedDict, total=False):
 
     # Final output
     final_answer: str
+    # Latency profiling
+    latency: dict[str, float]
+
+
+def record_latency(state: RAGState, stage: str, elapsed: float):
+
+    timings = dict(state.get("latency", {}))
+    timings[stage] = round(timings.get(stage, 0.0) + elapsed, 3)
+    return timings
+
 
 
 # ============================================================
@@ -83,6 +94,8 @@ def build_rag_workflow(
     # ========================================================
 
     def router_node(state: RAGState) -> dict:
+
+        start_time = time.perf_counter()
 
         print(
             "\n[LangGraph] Router Agent analyzing request..."
@@ -128,17 +141,26 @@ def build_rag_workflow(
                 reason
             )
 
+        elapsed = time.perf_counter() - start_time
+
         return {
             "route": route,
             "route_reason": reason,
             "retry_count": 0,
+            "latency": record_latency(
+                state,
+                "router",
+                elapsed
+            ),
         }
-
 
     # ========================================================
     # RETRIEVAL NODE
     # ========================================================
+
     def retrieve_node(state: RAGState) -> dict:
+
+        start_time = time.perf_counter()
 
         print(
             "[LangGraph] Retrieving documents..."
@@ -166,16 +188,24 @@ def build_rag_workflow(
             f"{len(candidate_documents)} candidate chunks."
         )
 
+        elapsed = time.perf_counter() - start_time
+
         return {
             "retrieval_query": retrieval_query,
             "candidate_documents": candidate_documents,
+            "latency": record_latency(
+                state,
+                "retrieval",
+                elapsed
+            ),
         }
-
     # ========================================================
     # RERANK NODE
     # ========================================================
 
     def rerank_node(state: RAGState) -> dict:
+
+        start_time = time.perf_counter()
 
         print(
             "[LangGraph] Reranking documents..."
@@ -190,9 +220,16 @@ def build_rag_workflow(
 
         if not candidate_documents:
 
+            elapsed = time.perf_counter() - start_time
+
             return {
                 "documents": [],
                 "context": "",
+                "latency": record_latency(
+                    state,
+                    "reranking",
+                    elapsed
+                ),
             }
 
         documents = rerank_documents(
@@ -209,12 +246,17 @@ def build_rag_workflow(
             documents
         )
 
+        elapsed = time.perf_counter() - start_time
+
         return {
             "documents": documents,
             "context": context,
+            "latency": record_latency(
+                state,
+                "reranking",
+                elapsed
+            ),
         }
-
-
     # ========================================================
     # ROUTE AFTER RERANKING
     # ========================================================
@@ -246,12 +288,14 @@ def build_rag_workflow(
 
 
     # ========================================================
-    # SUMMARY SCOPE FILTER NODE
-    # ========================================================
+# SUMMARY SCOPE FILTER NODE
+# ========================================================
 
     def summary_filter_node(
         state: RAGState
     ) -> dict:
+
+        start_time = time.perf_counter()
 
         print(
             "[LangGraph] Filtering evidence "
@@ -267,9 +311,16 @@ def build_rag_workflow(
 
         if not documents:
 
+            elapsed = time.perf_counter() - start_time
+
             return {
                 "summary_documents": [],
                 "summary_context": "",
+                "latency": record_latency(
+                    state,
+                    "summary_filter",
+                    elapsed
+                ),
             }
 
         filtered_documents = filter_summary_documents(
@@ -285,20 +336,33 @@ def build_rag_workflow(
 
         if not filtered_documents:
 
+            elapsed = time.perf_counter() - start_time
+
             return {
                 "summary_documents": [],
                 "summary_context": "",
+                "latency": record_latency(
+                    state,
+                    "summary_filter",
+                    elapsed
+                ),
             }
 
         summary_context = build_context(
             filtered_documents
         )
 
+        elapsed = time.perf_counter() - start_time
+
         return {
             "summary_documents": filtered_documents,
             "summary_context": summary_context,
+            "latency": record_latency(
+                state,
+                "summary_filter",
+                elapsed
+            ),
         }
-
 
     # ========================================================
     # NORMAL QA GENERATOR NODE
@@ -306,8 +370,10 @@ def build_rag_workflow(
 
     def generate_node(state: RAGState) -> dict:
 
+        start_time = time.perf_counter()
+
         print(
-            "[LangGraph] Generating QA answer..."
+            "[LangGraph] Generating answer..."
         )
 
         question = state["question"]
@@ -319,11 +385,18 @@ def build_rag_workflow(
 
         if not context.strip():
 
+            elapsed = time.perf_counter() - start_time
+
             return {
                 "answer": (
                     "I could not find this information "
                     "in the provided documents."
-                )
+                ),
+                "latency": record_latency(
+                    state,
+                    "generation",
+                    elapsed
+                ),
             }
 
         prompt = prompt_template.format(
@@ -348,22 +421,30 @@ def build_rag_workflow(
                 "in the provided documents."
             )
 
-        return {
-            "answer": answer
-        }
+        elapsed = time.perf_counter() - start_time
 
+        return {
+            "answer": answer,
+            "latency": record_latency(
+                state,
+                "generation",
+                elapsed
+            ),
+        }
+    # ========================================================
+    # ROUTING AFTER VERIFICATION
+    # ========================================================
 
     # ========================================================
     # SUMMARIZER AGENT NODE
     # ========================================================
 
-    def summarize_node(
-        state: RAGState
-    ) -> dict:
+    def summarize_node(state: RAGState) -> dict:
+
+        start_time = time.perf_counter()
 
         print(
-            "[LangGraph] Summarizer Agent "
-            "generating summary..."
+            "[LangGraph] Summarizer Agent generating summary..."
         )
 
         question = state["question"]
@@ -375,12 +456,19 @@ def build_rag_workflow(
 
         if not context.strip():
 
+            elapsed = time.perf_counter() - start_time
+
             return {
                 "answer": (
                     "I could not find enough information "
                     "in the provided documents to summarize "
                     "this topic."
-                )
+                ),
+                "latency": record_latency(
+                    state,
+                    "summarization",
+                    elapsed
+                ),
             }
 
         result = summarize_documents(
@@ -401,8 +489,15 @@ def build_rag_workflow(
                 "this topic."
             )
 
+        elapsed = time.perf_counter() - start_time
+
         return {
-            "answer": summary
+            "answer": summary,
+            "latency": record_latency(
+                state,
+                "summarization",
+                elapsed
+            ),
         }
 
 
@@ -410,9 +505,9 @@ def build_rag_workflow(
     # VERIFIER AGENT NODE
     # ========================================================
 
-    def verify_node(
-        state: RAGState
-    ) -> dict:
+    def verify_node(state: RAGState) -> dict:
+
+        start_time = time.perf_counter()
 
         print(
             "[LangGraph] Verifying answer..."
@@ -424,14 +519,11 @@ def build_rag_workflow(
         )
 
         if route == "summarize":
-
             verification_context = state.get(
                 "summary_context",
                 ""
             )
-
         else:
-
             verification_context = state.get(
                 "context",
                 ""
@@ -460,20 +552,22 @@ def build_rag_workflow(
         )
 
         if issues:
-
             print(
                 "[LangGraph] Verifier issues:",
                 issues
             )
 
+        elapsed = time.perf_counter() - start_time
+
         return {
-            "verification": verification
+            "verification": verification,
+            "latency": record_latency(
+                state,
+                "verification",
+                elapsed
+            ),
         }
 
-
-    # ========================================================
-    # ROUTING AFTER VERIFICATION
-    # ========================================================
 
     def route_after_verification(
         state: RAGState
@@ -529,6 +623,8 @@ def build_rag_workflow(
     def revise_node(
         state: RAGState
     ) -> dict:
+
+        start_time = time.perf_counter()
 
         retry_count = (
             state.get(
@@ -732,6 +828,11 @@ Revised answer:
         return {
             "answer": revised_answer,
             "retry_count": retry_count,
+            "latency": record_latency(
+                state,
+                "revision",
+                time.perf_counter() - start_time
+            ),
         }
 
 
@@ -742,6 +843,8 @@ Revised answer:
     def citation_node(
         state: RAGState
     ) -> dict:
+
+        start_time = time.perf_counter()
 
         print(
             "[LangGraph] Finding supporting citations..."
@@ -784,6 +887,11 @@ Revised answer:
                 "citation_result": {
                     "supported": False,
                     "citations": [],
+                "latency": record_latency(
+                    state,
+                    "citation",
+                    time.perf_counter() - start_time
+                ),
                 },
                 "citations": [],
             }
@@ -816,6 +924,11 @@ Revised answer:
         return {
             "citation_result": citation_result,
             "citations": citations,
+            "latency": record_latency(
+                state,
+                "citation",
+                time.perf_counter() - start_time
+            ),
         }
 
 
@@ -826,6 +939,8 @@ Revised answer:
     def finalize_node(
         state: RAGState
     ) -> dict:
+
+        start_time = time.perf_counter()
 
         print(
             "[LangGraph] Finalizing answer..."
@@ -859,13 +974,40 @@ Revised answer:
                 )
 
         return {
-            "final_answer": answer
+            "final_answer": answer,
+            "latency": record_latency(
+                state,
+                "finalize",
+                time.perf_counter() - start_time
+            ),
         }
 
 
     # ========================================================
     # BUILD LANGGRAPH
     # ========================================================
+
+    # ========================================================
+    # TIMED SECURITY NODE
+    # ========================================================
+
+    def timed_security_node(state: RAGState) -> dict:
+
+        start_time = time.perf_counter()
+        result = security_agent(state)
+        elapsed = time.perf_counter() - start_time
+
+        if result is None:
+            result = {}
+
+        result = dict(result)
+        result["latency"] = record_latency(
+            state,
+            "security",
+            elapsed
+        )
+        return result
+
 
     workflow = StateGraph(
         RAGState
@@ -879,7 +1021,7 @@ Revised answer:
     # Security Agent
     workflow.add_node(
         "security",
-        security_agent
+        timed_security_node
     )
 
     workflow.add_node(
@@ -940,7 +1082,7 @@ Revised answer:
     )
 
 
-        # ========================================================
+    # ========================================================
     # START → SECURITY
     # ========================================================
 
