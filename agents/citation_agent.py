@@ -445,10 +445,14 @@ def find_citations(
     answer: str,
     documents
 ) -> dict[str, Any]:
-
     """
-    Identify which retrieved chunks directly support
-    the final verified answer.
+    Identify which retrieved chunks directly support the final verified answer.
+
+    The deterministic evidence check runs first for answers containing
+    explicit numeric evidence. This avoids an unnecessary LLM call for
+    straightforward factual/numeric answers. The existing LLM Citation Agent
+    remains the fallback for answers that cannot be safely supported by the
+    deterministic check.
     """
 
     # --------------------------------------------------------
@@ -456,12 +460,37 @@ def find_citations(
     # --------------------------------------------------------
 
     if not documents:
-
         return {
             "supported": False,
             "citations": [],
         }
 
+    # --------------------------------------------------------
+    # DETERMINISTIC EVIDENCE CHECK FIRST
+    # --------------------------------------------------------
+    # For answers containing explicit percentages or financial values,
+    # the existing deterministic matcher can identify supporting chunks
+    # without invoking the LLM.
+
+    deterministic_citations = deterministic_citation_fallback(
+        answer,
+        documents
+    )
+
+    deterministic_citations = remove_duplicate_citations(
+        deterministic_citations
+    )[:MAX_CITATIONS]
+
+    if deterministic_citations:
+        print(
+            "[Citation Agent] Deterministic evidence match found "
+            f"{len(deterministic_citations)} supporting citation(s). "
+            "Skipping LLM citation call."
+        )
+        return {
+            "supported": True,
+            "citations": deterministic_citations,
+        }
 
     # --------------------------------------------------------
     # BUILD NUMBERED CHUNK LIST
@@ -470,7 +499,6 @@ def find_citations(
     chunk_text = build_chunk_list(
         documents
     )
-
 
     # --------------------------------------------------------
     # BUILD CITATION PROMPT
@@ -481,7 +509,6 @@ def find_citations(
         answer=answer,
         chunks=chunk_text,
     )
-
 
     # --------------------------------------------------------
     # ASK CITATION AGENT
@@ -496,7 +523,6 @@ def find_citations(
         "content",
         str(response)
     )
-
 
     # --------------------------------------------------------
     # PARSE MODEL OUTPUT
@@ -515,9 +541,7 @@ def find_citations(
         selected_citations,
         list
     ):
-
         selected_citations = []
-
 
     # --------------------------------------------------------
     # VALIDATE CITATION IDS
@@ -541,13 +565,11 @@ def find_citations(
             chunk_id = int(
                 chunk_id
             )
-
         except (
             TypeError,
             ValueError,
         ):
             continue
-
 
         # Chunk IDs start at 1
         if (
@@ -555,7 +577,6 @@ def find_citations(
             or chunk_id > len(documents)
         ):
             continue
-
 
         document = documents[
             chunk_id - 1
@@ -581,7 +602,6 @@ def find_citations(
             )
         ).strip()
 
-
         final_citations.append(
             {
                 "chunk_id": chunk_id,
@@ -592,7 +612,6 @@ def find_citations(
             }
         )
 
-
     # --------------------------------------------------------
     # REMOVE DUPLICATE PAGE REFERENCES
     # --------------------------------------------------------
@@ -601,54 +620,44 @@ def find_citations(
         final_citations
     )
 
-
     # --------------------------------------------------------
-    # DETERMINISTIC CITATION FALLBACK
+    # DETERMINISTIC FALLBACK AFTER LLM
     # --------------------------------------------------------
+    # Preserved as a second safety net if the LLM returns no usable IDs.
 
     if not final_citations:
-
         print(
             "[Citation Agent] LLM found no citation. "
             "Running deterministic fallback..."
         )
 
-        final_citations = (
-            deterministic_citation_fallback(
-                answer,
-                documents
-            )
+        final_citations = deterministic_citation_fallback(
+            answer,
+            documents
         )
 
-        final_citations = (
-            remove_duplicate_citations(
-                final_citations
-            )
+        final_citations = remove_duplicate_citations(
+            final_citations
         )
 
         if final_citations:
-
             print(
                 f"[Citation Agent] Fallback found "
                 f"{len(final_citations)} supporting citation(s)."
             )
-
         else:
-
             print(
                 "[Citation Agent] Fallback found "
                 "no supporting citation."
             )
 
-
-        # --------------------------------------------------------
+    # --------------------------------------------------------
     # LIMIT NUMBER OF CITATIONS
     # --------------------------------------------------------
 
     final_citations = final_citations[
         :MAX_CITATIONS
     ]
-
 
     return {
         "supported": bool(
