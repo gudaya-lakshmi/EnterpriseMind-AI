@@ -4,7 +4,6 @@
 
 ![Python](https://img.shields.io/badge/Python-3.x-blue)
 
----
 
 ## Table of Contents
 
@@ -30,7 +29,6 @@
 20. [Future Enhancements](#future-enhancements)
 21. [License](#license)
 
----
 
 ## Overview
 
@@ -40,39 +38,80 @@ The project combines **RAG**, **Agentic AI**, **Security**, **Verification**, an
 
 ## Problem Statement
 
-Enterprise knowledge is spread across large collections of documents, and employees need accurate answers that are traceable to their sources. Such a system must also:
+Enterprise organizations store large amounts of private and sensitive information across internal documents. Employees need an easy and efficient way to access this information, but access must remain secure and restricted to authorized users.
 
-- Ensure answers are supported by retrieved evidence
-- Restrict document access according to the user's role
-- Defend against prompt injection and manipulative requests
+The main problem addressed by EnterpriseMind AI is:
 
-EnterpriseMind AI addresses these requirements through a multi-agent workflow with authenticated, role-based retrieval, answer verification, and citations.
+> **How can employees securely and easily access relevant private enterprise data while ensuring that unauthorized users cannot access restricted information?**
 
-## Key Features
+EnterpriseMind AI addresses this problem by combining an enterprise knowledge assistant with authentication, Role-Based Access Control (RBAC), secure retrieval, and an Agentic RAG workflow.
 
-- PDF/document ingestion with chunking and dense semantic retrieval
-- Two-stage retrieval: Top 20 initial retrieval followed by CrossEncoder reranking to Top 8
-- LangGraph-based agentic workflow with Security, Router, Summarizer, Verifier, and Citation agents
-- Prompt injection and malicious request detection before normal RAG processing
-- JWT authentication with bcrypt password hashing
-- Role-Based Access Control (RBAC) enforced at the retrieval layer
-- Verifier Agent with a revision loop for unsupported claims and numbers
-- Citations with supporting document pages/evidence
-- React chat interface with agent activity visualization and source display
-- DeepEval-based RAG evaluation
-- Stage-level latency profiling
+### Key Challenges
+
+- Provide easy access to private enterprise information through natural-language queries
+- Ensure that users can access only the enterprise data they are authorized to view
+- Prevent unauthorized retrieval of restricted documents
+- Protect the system from prompt injection and malicious requests
+- Ensure that generated answers are grounded in the retrieved enterprise evidence
+- Provide supporting citations so users can verify the information
+
+RBAC is used to enforce document-level access permissions based on the authenticated user's role, while the Security Agent provides an additional layer of protection against malicious or manipulative requests.
 
 ## Architecture
+> **GitHub rendering:** The architecture and workflow diagrams below use Mermaid, which GitHub renders as interactive diagrams in Markdown.
+
 
 EnterpriseMind AI is organized into three layers:
 
+```mermaid
+flowchart TB
+    U[User] --> F[React + Vite Frontend]
+    F --> B[FastAPI Backend]
+    B --> A[JWT Authentication]
+    A --> S[Security Agent]
+    S --> R[Router Agent]
+    R --> RBAC[RBAC / Authorized Retrieval]
+    RBAC --> DB[ChromaDB]
+    DB --> RR[CrossEncoder Reranking]
+    RR --> Q{Request Type}
+    Q --> QA[QA Path]
+    Q --> SUM[Summarization Path]
+    QA --> L[Llama 3.2]
+    SUM --> L
+    L --> V[Verifier Agent]
+    V -->|PASS| C[Citation Agent]
+    V -->|REVISE| L
+    C --> O[Grounded Final Answer]
+    O --> F
+```
+
 | Layer | Components |
-|-------|------------|
+|---|---|
 | **Frontend** | React, Vite — login, chat, agent activity visualization, citation/source display |
 | **Backend** | FastAPI, JWT authentication, SQLite user database, protected `/ask` endpoint |
 | **AI / RAG** | LangGraph, LangChain, Ollama (Llama 3.2), ChromaDB, Nomic embeddings, CrossEncoder |
 
 ## How the System Works
+
+```mermaid
+flowchart TD
+    A[Enterprise Documents] --> B[Document Loading & Chunking]
+    B --> C[Embeddings: nomic-embed-text]
+    C --> D[ChromaDB Vector Database]
+    E[User Question] --> F[Security Agent]
+    F --> G[Router Agent]
+    G --> H[RBAC / Authorized Retrieval]
+    H --> D
+    D --> I[Top 20 Chunks]
+    I --> J[CrossEncoder Reranking]
+    J --> K[Top 8 Chunks]
+    K --> L{QA or Summarize}
+    L --> M[Generation / Summarization]
+    M --> N[Verifier Agent]
+    N -->|PASS| O[Citation Agent]
+    N -->|REVISE| M
+    O --> P[Grounded Final Answer]
+```
 
 1. The user logs in and receives a JWT.
 2. The user submits a request through the chat interface.
@@ -90,32 +129,23 @@ EnterpriseMind AI is organized into three layers:
 
 The workflow is implemented with LangGraph:
 
-```
-User Request
-     ↓
-Security Agent
-     ↓
-Router Agent
-     ↓
-RBAC / Authorized Retrieval
-     ↓
-ChromaDB Retrieval
-     ↓
-CrossEncoder Reranking
-     ↓
- ┌───────────────┐
- │               │
- QA          Summarization
- │               │
- └───────┬───────┘
-         ↓
-   Verifier Agent
-         ↓
-   PASS / REVISE
-         ↓
-   Citation Agent
-         ↓
-   Final Answer
+```mermaid
+flowchart TD
+    A[User Request] --> B[Security Agent]
+    B -->|Allowed| C[Router Agent]
+    B -->|Blocked| X[Security Rejection]
+    C --> D[RBAC / Authorized Retrieval]
+    D --> E[ChromaDB Retrieval]
+    E --> F[CrossEncoder Reranking]
+    F --> G{Route}
+    G --> QA[QA]
+    G --> SUM[Summarization]
+    QA --> V[Verifier Agent]
+    SUM --> V
+    V -->|PASS| CI[Citation Agent]
+    V -->|REVISE| REV[Revision]
+    REV --> V
+    CI --> Z[Final Answer]
 ```
 
 ### Agents
@@ -137,18 +167,13 @@ CrossEncoder Reranking
 - Detects unsupported factual claims, numerical values, and false premises
 - Can trigger a revision loop when unsupported information is detected
 
-```
-Generate
-   ↓
-Verify
-   ↓
-Unsupported?
- ┌───────┴───────┐
-No              Yes
- ↓                ↓
-PASS          Revise Answer
-                  ↓
-                Verify
+```mermaid
+flowchart LR
+    A[Generate] --> B[Verify]
+    B --> C{Supported?}
+    C -->|Yes| D[PASS]
+    C -->|No| E[Revise Answer]
+    E --> A
 ```
 
 **5. Citation Agent**
@@ -158,11 +183,20 @@ PASS          Revise Answer
 
 ## Retrieval Pipeline
 
-| Stage | Description |
-|-------|-------------|
+```mermaid
+flowchart LR
+    A[User Query] --> B[Dense Semantic Retrieval]
+    B --> C[Top 20 Chunks]
+    C --> D[CrossEncoder Reranking]
+    D --> E[Top 8 Relevant Chunks]
+    E --> F[Llama 3.2]
+```
+
+| Stage | Implementation |
+|---|---|
 | Ingestion | PDF/document ingestion |
 | Chunking | Document chunking |
-| Embeddings | Generated with `nomic-embed-text` |
+| Embeddings | `nomic-embed-text` |
 | Vector Database | ChromaDB |
 | Initial Retrieval | Dense semantic retrieval — Top 20 chunks |
 | Reranking | CrossEncoder reranking |
@@ -173,18 +207,11 @@ PASS          Revise Answer
 
 EnterpriseMind AI separates three security concepts:
 
-```
-Authentication
-      ↓
-Who is the user?
-
-RBAC
-      ↓
-What documents can the user access?
-
-Security Agent
-      ↓
-Is the request malicious/manipulative?
+```mermaid
+flowchart TD
+    A[Authentication] --> B[Who is the user?]
+    C[RBAC] --> D[What documents can the user access?]
+    E[Security Agent] --> F[Is the request malicious or manipulative?]
 ```
 
 **Authentication**
@@ -226,11 +253,11 @@ Built with React and Vite:
 Built with FastAPI, with JWT authentication and a SQLite authentication database.
 
 | Endpoint | Description |
-|----------|-------------|
-| `/` | API health/status message |
-| `/login` | User authentication |
-| `/me` | Authenticated user information |
-| `/ask` | Protected endpoint for submitting questions |
+|---|---|
+| `GET /` | API health/status message |
+| `POST /login` | User authentication |
+| `GET /me` | Authenticated user information |
+| `POST /ask` | Protected endpoint for submitting questions |
 
 API documentation is available through Swagger/OpenAPI.
 
