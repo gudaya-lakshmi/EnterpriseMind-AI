@@ -272,7 +272,7 @@ RAG evaluation was performed with **DeepEval**.
 | Faithfulness | 0.833 |
 | Answer Relevancy | 1.000 |
 | Contextual Precision | 0.925 |
-| Contextual Recall | 0.500 |
+| Contextual Recall | 0.977 |
 
 **Retrieval benchmark:** approximately 90% successful retrieval.
 
