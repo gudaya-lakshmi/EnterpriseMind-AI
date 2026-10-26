@@ -431,7 +431,7 @@ The following are planned future enhancements and are **not part of the current 
 - Conversation memory
 - Larger evaluation benchmark
 - Production deployment
-- Stronger secret management
+
 
 ## License
 
